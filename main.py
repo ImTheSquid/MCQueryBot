@@ -87,8 +87,14 @@ class Client(discord.Client):
                                            'in your `server.properties` file.')
             else:
                 serverInfo = self.loader.get_server_info()
-                await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. Players: `{2}`'
-                                           .format(serverInfo[0], serverInfo[1], ', '.join(query.players.names)))
+                if len(query.players.names) > 0:
+                    await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. Players: '
+                                               '`{2}` '
+                                               .format(serverInfo[0], serverInfo[1], ', '.join(query.players.names)))
+                else:
+                    await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. No one is '
+                                               'online. '
+                                               .format(serverInfo[0], serverInfo[1]))
         elif command == 'start-server':
             if not path.isfile('start.sh'):
                 await message.channel.send(':x: No `start.sh` file found. Please add file and mark it as executable.')
