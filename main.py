@@ -1,8 +1,8 @@
 import getopt
 import json
-import os.path as path
 import socket
 import sys
+from os import path
 
 import discord
 from mcstatus import MinecraftServer
@@ -12,14 +12,17 @@ class DataLoader:
     config = {'token': '', 'server': '', 'port': 25565, 'channel': ''}
 
     def __init__(self, data_args: dict, gen: bool):
+        if len(data_args) > 0 and not gen:
+            self.load_config()
+
         if 'token' in data_args:
             self.config['token'] = data_args['token']
-        elif 'server' in data_args:
+        if 'server' in data_args:
             self.config['server'] = data_args['server']
-        elif 'port' in data_args:
+        if 'port' in data_args:
             self.config['port'] = data_args['port']
 
-        if gen:
+        if len(data_args) > 0:
             self.generate_config()
 
     def generate_config(self):
@@ -47,35 +50,41 @@ class DataLoader:
 class Client(discord.Client):
     loader = None
     server = None
+    # Prevents duplicate initialization messages if connection lost, but still sends to console
+    init_complete = False
 
     async def on_ready(self):
         print('Logged on as {0}!'.format(self.user))
         if self.loader is not None and len(self.loader.get_channel()) > 0:
-            channelNames = [n.name for n in self.get_all_channels()]
-            if self.loader.get_channel() not in channelNames:
+            channel_names = [n.name for n in self.get_all_channels()]
+            if self.loader.get_channel() not in channel_names or self.init_complete:
                 return
             else:
+                self.init_complete = True
                 channels = [c for c in self.get_all_channels()]
-                await channels[channelNames.index(self.loader.get_channel())].send(':white_check_mark: '
-                                                                                   'Initialization '
-                                                                                   'successful.')
+                await channels[channel_names.index(self.loader.get_channel())].send(':white_check_mark: '
+                                                                                    'Initialization '
+                                                                                    'successful.')
 
     async def on_message(self, message):
         if not message.content.startswith('mc!'):
             return
         if len(self.loader.get_channel()) > 0 and not message.channel.name == self.loader.get_channel():
             return
-        roleNames = [n.name for n in message.author.roles]
+        role_names = [n.name for n in message.author.roles]
         command = message.content[len('mc!'):]
         print('Message from {0.author}: {0.content}'.format(message))
 
-        if command == 'exit' and 'Bot Manager' in roleNames:
+        if command == 'exit' and 'Bot Manager' in role_names:
             await message.channel.send(':stop_button: Exiting...')
             await self.logout()
             sys.exit(0)
-        elif command == 'query':
-            if self.server is None or self.loader is None:
-                await message.channel.send(':x: Server object or loader object not connected. Could not get status.')
+        elif command == 'query' or command == 'status':
+            if self.server is None:
+                await message.channel.send(':x: Server object not connected. Could not get status.')
+                return
+            if self.loader is None:
+                await message.channel.send(':x: Loader object not connected. Could not get status.')
                 return
 
             await message.channel.send(':arrows_counterclockwise: Querying server, this may take a while...')
@@ -86,15 +95,15 @@ class Client(discord.Client):
                                            'Make sure `enable-query` is set to `true` '
                                            'in your `server.properties` file.')
             else:
-                serverInfo = self.loader.get_server_info()
+                server_info = self.loader.get_server_info()
                 if len(query.players.names) > 0:
                     await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. Players: '
                                                '`{2}` '
-                                               .format(serverInfo[0], serverInfo[1], ', '.join(query.players.names)))
+                                               .format(server_info[0], server_info[1], ', '.join(query.players.names)))
                 else:
                     await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. No one is '
                                                'online. '
-                                               .format(serverInfo[0], serverInfo[1]))
+                                               .format(server_info[0], server_info[1]))
         elif command == 'start-server':
             if not path.isfile('start.sh'):
                 await message.channel.send(':x: No `start.sh` file found. Please add file and mark it as executable.')
@@ -110,19 +119,21 @@ class Client(discord.Client):
             else:
                 await message.channel.send(':x: The server is currently online.')
         elif command == 'help':
-            embed = discord.Embed(title="Help", description='All commands marked with "*" require the "Bot Manager" '
+            embed = discord.Embed(title='Help', description='All commands marked with "*" require the "Bot Manager" '
                                                             'role. If you do not have that role and try to use one of '
-                                                            'the *\'d commands, the bot will not respond.',
+                                                            'the *\'d commands, the bot will not recognize the '
+                                                            'command.',
                                   color=0x4287f5)
-            embed.add_field(name="query", value="Queries current server status.", inline=False)
-            embed.add_field(name="start-server", value="Starts server if crashed.", inline=False)
-            embed.add_field(name="set-channel <channel>", value="* Sets sole response channel. Pass '~' to respond to "
-                                                                "all channels.",
+            embed.add_field(name='query', value='Queries current server status.', inline=False)
+            embed.add_field(name='status', value='Same function as `query` command.', inline=False)
+            embed.add_field(name='start-server', value='Starts server if crashed.', inline=False)
+            embed.add_field(name='set-channel <channel>', value='* Sets sole response channel. Pass "~" to respond to '
+                                                                'all channels.',
                             inline=False)
-            embed.add_field(name="exit", value="* Exits bot.", inline=False)
-            embed.add_field(name="help", value="Prints help document.", inline=False)
+            embed.add_field(name='exit', value='Exits bot.', inline=False)
+            embed.add_field(name='help', value='Prints help document.', inline=False)
             await message.channel.send(embed=embed)
-        elif 'set-channel' in command and 'Bot Manager' in roleNames:
+        elif 'set-channel' in command and 'Bot Manager' in role_names:
             if self.loader is None:
                 await message.channel.send(':x: Loader object not connected. Could not set channel.')
                 return
@@ -137,8 +148,8 @@ class Client(discord.Client):
                 await message.channel.send(':white_check_mark: Set to accept all channels.')
                 self.loader.set_channel('')
                 return
-            channelNames = [n.name for n in self.get_all_channels()]
-            if channel not in channelNames:
+            channel_names = [n.name for n in self.get_all_channels()]
+            if channel not in channel_names:
                 await message.channel.send(':x: Invalid channel.')
             else:
                 await message.channel.send(':white_check_mark: Channel set to "#{0}".'.format(channel))
@@ -155,30 +166,30 @@ class Client(discord.Client):
 
 # Check for args
 args = sys.argv
-argList = args[1:]
-unixOptions = 'gt:s:p:'
-gnuOptions = ['generate', 'token=', 'server=', 'port=']
+arg_list = args[1:]
+unix_options = 'gt:s:p:'
+gnu_options = ['generate', 'token=', 'server=', 'port=']
 try:
-    arguments, values = getopt.getopt(argList, unixOptions, gnuOptions)
+    arguments, values = getopt.getopt(arg_list, unix_options, gnu_options)
 except getopt.error as err:
-    # output error, and return with an error code
+    # Output error and return with an error code
     print(str(err))
     sys.exit(2)
 generate = False
-dataArgs = {}
-for currentArg, currentVal in arguments:
-    if currentArg in ('-g', '--generate'):
+data_dict = {}
+for current_arg, current_val in arguments:
+    if current_arg in ('-g', '--generate'):
         generate = True
-    elif currentArg in ('-t', '--token'):
-        dataArgs['token'] = currentVal
-    elif currentArg in ('-s', '--server'):
-        dataArgs['server'] = currentVal
-    elif currentArg in ('-p', '--port'):
-        dataArgs['port'] = int(currentVal)
+    elif current_arg in ('-t', '--token'):
+        data_dict['token'] = current_val
+    elif current_arg in ('-s', '--server'):
+        data_dict['server'] = current_val
+    elif current_arg in ('-p', '--port'):
+        data_dict['port'] = int(current_val)
 
 if not path.isfile('config.json'):
     generate = True
-data = DataLoader(dataArgs, generate)
+data = DataLoader(data_dict, generate)
 
 data.load_config()
 if data.get_token() == '':
