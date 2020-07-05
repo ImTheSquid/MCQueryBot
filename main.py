@@ -79,32 +79,74 @@ class Client(discord.Client):
             await message.channel.send(':stop_button: Exiting...')
             await self.logout()
             sys.exit(0)
-        elif command == 'query' or command == 'status':
-            if self.server is None:
-                await message.channel.send(':x: Server object not connected. Could not get status.')
-                return
-            if self.loader is None:
-                await message.channel.send(':x: Loader object not connected. Could not get status.')
-                return
-
-            await message.channel.send(':arrows_counterclockwise: Querying server, this may take a while...')
-            try:
-                query = self.server.query()
-            except socket.timeout:
-                await message.channel.send(':x: Error querying server. The server may be offline. '
-                                           'Make sure `enable-query` is set to `true` '
-                                           'in your `server.properties` file.')
+        elif 'query' in command or 'status' in command:
+            use_status = command.startswith('status')
+            if len(command.split(' ')) == 1:
+                if self.server is None:
+                    await message.channel.send(':x: Server object not connected. Could not get status.')
+                    return
+                if self.loader is None:
+                    await message.channel.send(':x: Loader object not connected. Could not get status.')
+                    return
+            if use_status:
+                await message.channel.send(':arrows_counterclockwise: Getting server status, this may take a while...')
             else:
-                server_info = self.loader.get_server_info()
-                if len(query.players.names) > 0:
-                    await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. Players: '
-                                               '`{2}` '
-                                               .format(server_info[0], server_info[1], ', '.join(query.players.names)))
+                await message.channel.send(':arrows_counterclockwise: Querying server, this may take a while...')
+            try:
+                if len(command.split(' ')) == 1:
+                    if use_status:
+                        query = self.server.status()
+                    else:
+                        query = self.server.query()
+                    server_info = self.loader.get_server_info()
+                    print_ip = server_info[0]
+                    print_port = server_info[1]
+                else:
+                    ip_port = command.split(' ')[1]
+                    if len(ip_port[1].split(':')) == 2:
+                        combo_list = ip_port.split(':', 1)
+                        ip = combo_list[0]
+                        port = combo_list[1]
+                    else:
+                        ip = ip_port
+                        port = 25565
+                    if use_status:
+                        query = MinecraftServer(ip, port).status()
+                    else:
+                        query = MinecraftServer(ip, port).query()
+                    print_ip = ip
+                    print_port = port
+            except socket.timeout:
+                if not use_status:
+                    await message.channel.send(':x: Error querying server. The server may be offline. '
+                                               'Make sure `enable-query` is set to `true` '
+                                               'in the `server.properties` file. Try using the `status` command '
+                                               'instead.')
+                else:
+                    await message.channel.send(':x: Error querying server. The server may be offline.')
+            else:
+                print_data = []
+                max_play = 0
+                current = 0
+                if use_status and query.players.sample is not None:
+                    for item in query.players.sample:
+                        print_data.append(item.name)
+                elif not use_status:
+                    print_data = query.players.names
+                    max_play = query.players.max
+                    current = query.players.online
+                if use_status:
+                    max_play = query.players.max
+                    current = query.players.online
+                if len(print_data) > 0:
+                    await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online.'
+                                               ' Players [{2}/{3}]: `{4}` '
+                                               .format(print_ip, print_port, current, max_play, ', '.join(print_data)))
                 else:
                     await message.channel.send(':white_check_mark: Server with address `{0}:{1}` is online. No one is '
                                                'online. '
-                                               .format(server_info[0], server_info[1]))
-        elif command == 'start-server':
+                                               .format(print_ip, print_port))
+        elif command == 'start-server' or command == 'start':
             if not path.isfile('start.sh'):
                 await message.channel.send(':x: No `start.sh` file found. Please add file and mark it as executable.')
                 return
@@ -124,14 +166,18 @@ class Client(discord.Client):
                                                             'the *\'d commands, the bot will not recognize the '
                                                             'command.',
                                   color=0x4287f5)
-            embed.add_field(name='query', value='Queries current server status.', inline=False)
-            embed.add_field(name='status', value='Same function as `query` command.', inline=False)
-            embed.add_field(name='start-server', value='Starts server if crashed.', inline=False)
-            embed.add_field(name='set-channel <channel>', value='* Sets sole response channel. Pass "~" to respond to '
-                                                                'all channels.',
+            embed.add_field(name='`query [ip:port]`', value='Queries current server status. Adding an IP with an '
+                                                            'optional port will query the specified IP.', inline=False)
+            embed.add_field(name='`status [ip:port]`', value='Same arguments as `query`, but uses different command '
+                                                             'that always works for servers version 1.7+.',
                             inline=False)
-            embed.add_field(name='exit', value='Exits bot.', inline=False)
-            embed.add_field(name='help', value='Prints help document.', inline=False)
+            embed.add_field(name='`start-server`', value='Starts server if crashed.', inline=False)
+            embed.add_field(name='`start`', value='Same function as `start-server` command.', inline=False)
+            embed.add_field(name='`set-channel <channel>`', value='* Sets sole response channel. Pass `~` to respond to'
+                                                                  ' all channels.',
+                            inline=False)
+            embed.add_field(name='`exit`', value='Exits bot.', inline=False)
+            embed.add_field(name='`help`', value='Prints help document.', inline=False)
             await message.channel.send(embed=embed)
         elif 'set-channel' in command and 'Bot Manager' in role_names:
             if self.loader is None:
