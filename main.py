@@ -103,10 +103,10 @@ class Client(discord.Client):
                     print_port = server_info[1]
                 else:
                     ip_port = command.split(' ')[1]
-                    if len(ip_port[1].split(':')) == 2:
+                    if len(ip_port.split(':')) == 2:
                         combo_list = ip_port.split(':', 1)
                         ip = combo_list[0]
-                        port = combo_list[1]
+                        port = int(combo_list[1])
                     else:
                         ip = ip_port
                         port = 25565
@@ -124,6 +124,8 @@ class Client(discord.Client):
                                                'instead.')
                 else:
                     await message.channel.send(':x: Error querying server. The server may be offline.')
+            except socket.error:
+                await message.channel.send(':x: Socket error.')
             else:
                 print_data = []
                 max_play = 0
